@@ -38,6 +38,12 @@ metrics_generator:
         send_exemplars: true
   traces_storage:
     path: /tmp/tempo/generator/traces
+  processor:
+    span_metrics:
+      # Include these resource attributes as metric labels
+      dimensions:
+        - service.name
+        - deployment.environment
 
 storage:
   trace:

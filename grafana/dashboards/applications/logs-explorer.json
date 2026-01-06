@@ -19,7 +19,20 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
   "id": null,
-  "links": [],
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Traces Explorer",
+      "tooltip": "View traces and service map",
+      "type": "link",
+      "url": "/d/traces-explorer/traces-explorer"
+    }
+  ],
   "panels": [
     {
       "collapsed": false,

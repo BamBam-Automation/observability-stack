@@ -19,7 +19,20 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
   "id": null,
-  "links": [],
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "search",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Interactive Trace Search",
+      "tooltip": "Open the interactive trace search dashboard",
+      "type": "link",
+      "url": "/d/trace-search/trace-search"
+    }
+  ],
   "panels": [
     {
       "datasource": {
@@ -48,7 +61,7 @@
             "uid": "tempo"
           },
           "limit": 20,
-          "query": "{ resource.app=\"$app\" && resource.environment=\"$environment\" && resource.service.name=~\"$service\" }",
+          "query": "{}",
           "queryType": "serviceMap",
           "refId": "A",
           "tableType": "spans"
@@ -56,12 +69,88 @@
       ],
       "title": "Service Map / Dependency Graph",
       "type": "nodeGraph",
-      "description": "Visual representation of service dependencies and call patterns"
+      "description": "Visual representation of all service dependencies. Note: Service map shows all services regardless of filters - it's based on aggregated metrics, not individual traces."
     },
     {
       "datasource": {
         "type": "tempo",
         "uid": "tempo"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Trace ID"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 300
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "View Trace",
+                    "url": "/explore?left={\"datasource\":\"tempo\",\"queries\":[{\"query\":\"${__data.fields.traceID}\",\"queryType\":\"traceql\"}]}"
+                  },
+                  {
+                    "title": "View Logs",
+                    "url": "/d/logs-explorer-otel/logs-explorer?var-trace_id=${__data.fields.traceID}"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Service"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Duration"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 10,
@@ -71,11 +160,20 @@
       },
       "id": 2,
       "options": {
-        "query": {
-          "filters": [],
-          "query": "{ resource.app=\"$app\" && resource.environment=\"$environment\" && resource.service.name=~\"$service\" }",
-          "queryType": "traceql"
-        }
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Start time"
+          }
+        ]
       },
       "targets": [
         {
@@ -83,16 +181,36 @@
             "type": "tempo",
             "uid": "tempo"
           },
-          "limit": 20,
-          "query": "{ resource.app=\"$app\" && resource.environment=\"$environment\" && resource.service.name=~\"$service\" }",
+          "limit": 50,
+          "query": "{ resource.service.name=~\"${service:regex}\" && resource.deployment.environment=~\"${environment:regex}\" && kind = server }",
           "queryType": "traceql",
           "refId": "A",
           "tableType": "traces"
         }
       ],
-      "title": "Trace Search",
-      "type": "traces",
-      "description": "Search and explore distributed traces. Click on a trace to view its details."
+      "title": "Recent Requests",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "spanID": true,
+              "spanSet": true
+            },
+            "indexByName": {},
+            "renameByName": {
+              "duration": "Duration",
+              "name": "Operation",
+              "spanCount": "Spans",
+              "traceID": "Trace ID",
+              "traceName": "Name",
+              "traceService": "Service"
+            }
+          }
+        }
+      ],
+      "type": "table",
+      "description": "Recent traces for selected services. Click on Trace ID to view details in Explore."
     },
     {
       "datasource": {
@@ -179,8 +297,8 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (service_name) (rate(traces_spanmetrics_calls_total{app=\"$app\", environment=\"$environment\", service_name=~\"$service\"}[$__rate_interval]))",
-          "legendFormat": "{{service_name}}",
+          "expr": "sum by (service) (rate(traces_spanmetrics_calls_total{service=~\"$service\", deployment_environment=~\"$environment\"}[$__rate_interval]))",
+          "legendFormat": "{{service}}",
           "range": true,
           "refId": "A"
         }
@@ -328,8 +446,8 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.50, sum by (service_name, le) (rate(traces_spanmetrics_latency_bucket{app=\"$app\", environment=\"$environment\", service_name=~\"$service\"}[$__rate_interval])))",
-          "legendFormat": "{{service_name}} - p50",
+          "expr": "histogram_quantile(0.50, sum by (service, le) (rate(traces_spanmetrics_latency_bucket{service=~\"$service\", deployment_environment=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "{{service}} - p50",
           "range": true,
           "refId": "A"
         },
@@ -339,9 +457,9 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (service_name, le) (rate(traces_spanmetrics_latency_bucket{app=\"$app\", environment=\"$environment\", service_name=~\"$service\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (service, le) (rate(traces_spanmetrics_latency_bucket{service=~\"$service\", deployment_environment=~\"$environment\"}[$__rate_interval])))",
           "hide": false,
-          "legendFormat": "{{service_name}} - p95",
+          "legendFormat": "{{service}} - p95",
           "range": true,
           "refId": "B"
         },
@@ -351,9 +469,9 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum by (service_name, le) (rate(traces_spanmetrics_latency_bucket{app=\"$app\", environment=\"$environment\", service_name=~\"$service\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by (service, le) (rate(traces_spanmetrics_latency_bucket{service=~\"$service\", deployment_environment=~\"$environment\"}[$__rate_interval])))",
           "hide": false,
-          "legendFormat": "{{service_name}} - p99",
+          "legendFormat": "{{service}} - p99",
           "range": true,
           "refId": "C"
         }
@@ -457,8 +575,8 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (service_name) (rate(traces_spanmetrics_calls_total{app=\"$app\", environment=\"$environment\", service_name=~\"$service\", status_code=\"STATUS_CODE_ERROR\"}[$__rate_interval])) / sum by (service_name) (rate(traces_spanmetrics_calls_total{app=\"$app\", environment=\"$environment\", service_name=~\"$service\"}[$__rate_interval]))",
-          "legendFormat": "{{service_name}}",
+          "expr": "sum by (service) (rate(traces_spanmetrics_calls_total{service=~\"$service\", deployment_environment=~\"$environment\", status_code=\"STATUS_CODE_ERROR\"}[$__rate_interval])) / sum by (service) (rate(traces_spanmetrics_calls_total{service=~\"$service\", deployment_environment=~\"$environment\"}[$__rate_interval]))",
+          "legendFormat": "{{service}}",
           "range": true,
           "refId": "A"
         }
@@ -520,7 +638,11 @@
                 "value": [
                   {
                     "title": "View Trace",
-                    "url": "/explore?left={\"datasource\":\"tempo\",\"queries\":[{\"query\":\"${__data.fields[\\\"Trace ID\\\"]}\",\"queryType\":\"traceql\"}]}"
+                    "url": "/explore?left={\"datasource\":\"tempo\",\"queries\":[{\"query\":\"${__data.fields.traceID}\",\"queryType\":\"traceql\"}]}"
+                  },
+                  {
+                    "title": "View Logs",
+                    "url": "/d/logs-explorer-otel/logs-explorer?var-trace_id=${__data.fields.traceID}"
                   }
                 ]
               }
@@ -597,7 +719,7 @@
             "uid": "tempo"
           },
           "limit": 20,
-          "query": "{ resource.app=\"$app\" && resource.environment=\"$environment\" && resource.service.name=~\"$service\" && duration > 100ms }",
+          "query": "{ resource.service.name=~\"${service:regex}\" && resource.deployment.environment=~\"${environment:regex}\" && duration > 100ms }",
           "queryType": "traceql",
           "refId": "A",
           "tableType": "traces"
@@ -627,6 +749,182 @@
       ],
       "type": "table",
       "description": "Top 20 slowest traces in the selected time range. Click on Trace ID to view details."
+    },
+    {
+      "datasource": {
+        "type": "tempo",
+        "uid": "tempo"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "red",
+                "value": 200
+              }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Trace ID"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 280
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "View Trace",
+                    "url": "/explore?left={\"datasource\":\"tempo\",\"queries\":[{\"query\":\"${__data.fields.traceID}\",\"queryType\":\"traceql\"}]}"
+                  },
+                  {
+                    "title": "View Logs",
+                    "url": "/d/logs-explorer-otel/logs-explorer?var-trace_id=${__data.fields.traceID}"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Duration"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "gradient",
+                  "type": "gauge"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Type"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 80
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Operation"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 250
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 36
+      },
+      "id": 7,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Duration"
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "limit": 30,
+          "query": "{ resource.service.name=~\"${service:regex}\" && resource.deployment.environment=~\"${environment:regex}\" && kind = client && duration > 10ms } | select(span.db.system, span.db.statement, span.http.url, span.http.method, span.net.peer.name, span.peer.service)",
+          "queryType": "traceql",
+          "refId": "A",
+          "tableType": "spans"
+        }
+      ],
+      "title": "Slow Dependencies (DB, Redis, HTTP Client)",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "spanID": true,
+              "nestedSetParent": true,
+              "nestedSetLeft": true,
+              "nestedSetRight": true,
+              "rootServiceName": true,
+              "rootName": true
+            },
+            "indexByName": {},
+            "renameByName": {
+              "traceID": "Trace ID",
+              "spanDuration": "Duration",
+              "spanName": "Operation",
+              "spanKind": "Kind",
+              "span.db.system": "DB",
+              "span.db.statement": "Query/Statement",
+              "span.http.url": "URL",
+              "span.http.method": "Method",
+              "span.net.peer.name": "Target Host",
+              "span.peer.service": "Target Service"
+            }
+          }
+        }
+      ],
+      "type": "table",
+      "description": "Slow dependency calls (database, Redis, external APIs). Shows client spans >10ms. Click Trace ID to investigate."
     }
   ],
   "refresh": "30s",
@@ -638,62 +936,6 @@
   ],
   "templating": {
     "list": [
-      {
-        "current": {
-          "selected": false,
-          "text": "Jaiye",
-          "value": "Jaiye"
-        },
-        "datasource": {
-          "type": "prometheus",
-          "uid": "prometheus"
-        },
-        "definition": "label_values(traces_spanmetrics_calls_total, app)",
-        "hide": 0,
-        "includeAll": false,
-        "label": "Application",
-        "multi": false,
-        "name": "app",
-        "options": [],
-        "query": {
-          "qryType": 1,
-          "query": "label_values(traces_spanmetrics_calls_total, app)",
-          "refId": "PrometheusVariableQueryEditor-VariableQuery"
-        },
-        "refresh": 1,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 1,
-        "type": "query"
-      },
-      {
-        "current": {
-          "selected": false,
-          "text": "production",
-          "value": "production"
-        },
-        "datasource": {
-          "type": "prometheus",
-          "uid": "prometheus"
-        },
-        "definition": "label_values(traces_spanmetrics_calls_total{app=\"$app\"}, environment)",
-        "hide": 0,
-        "includeAll": false,
-        "label": "Environment",
-        "multi": false,
-        "name": "environment",
-        "options": [],
-        "query": {
-          "qryType": 1,
-          "query": "label_values(traces_spanmetrics_calls_total{app=\"$app\"}, environment)",
-          "refId": "PrometheusVariableQueryEditor-VariableQuery"
-        },
-        "refresh": 1,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 1,
-        "type": "query"
-      },
       {
         "allValue": ".*",
         "current": {
@@ -709,7 +951,8 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "definition": "label_values(traces_spanmetrics_calls_total{app=\"$app\", environment=\"$environment\"}, service_name)",
+        "definition": "label_values(traces_spanmetrics_calls_total, service)",
+        "description": "Services sending traces via OTEL collector to Tempo",
         "hide": 0,
         "includeAll": true,
         "label": "Service",
@@ -718,7 +961,37 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(traces_spanmetrics_calls_total{app=\"$app\", environment=\"$environment\"}, service_name)",
+          "query": "label_values(traces_spanmetrics_calls_total, service)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(traces_spanmetrics_calls_total{service=~\"$service\"}, deployment_environment)",
+        "description": "Deployment environment (from resource.deployment.environment)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Environment",
+        "multi": false,
+        "name": "environment",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(traces_spanmetrics_calls_total{service=~\"$service\"}, deployment_environment)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,
