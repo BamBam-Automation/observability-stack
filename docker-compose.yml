@@ -5,7 +5,7 @@
 #
 # Key differences from single-host setup:
 # - Services listen on private network interface for remote connections
-# - Grafana/Sentry accessed via Caddy reverse proxy with automatic HTTPS
+# - Grafana accessed via Caddy reverse proxy with automatic HTTPS
 # - Optimized for network security and performance
 
 version: '3.8'
@@ -19,7 +19,6 @@ volumes:
   prometheus-storage:
   loki-storage:
   tempo-storage:
-  postgres-glitchtip:
   alertmanager-storage:
   redis-autolog:
   caddy-data:
@@ -159,86 +158,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # ==================== GLITCHTIP STACK ====================
-
-  glitchtip-postgres:
-    image: postgres:16
-    container_name: glitchtip-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: glitchtip
-      POSTGRES_PASSWORD: ${GLITCHTIP_DB_PASSWORD:-glitchtip}
-      POSTGRES_DB: glitchtip
-    volumes:
-      - postgres-glitchtip:/var/lib/postgresql/data
-    networks:
-      - observability
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U glitchtip"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  glitchtip-redis:
-    image: redis:7.4-alpine
-    container_name: glitchtip-redis
-    restart: unless-stopped
-    networks:
-      - observability
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  glitchtip:
-    image: glitchtip/glitchtip:v4.1
-    container_name: glitchtip
-    restart: unless-stopped
-    expose:
-      - "8000"
-    environment:
-      DATABASE_URL: postgres://glitchtip:${GLITCHTIP_DB_PASSWORD:-glitchtip}@glitchtip-postgres:5432/glitchtip
-      REDIS_URL: redis://glitchtip-redis:6379/0
-      SECRET_KEY: ${GLITCHTIP_SECRET_KEY}
-      PORT: 8000
-      EMAIL_URL: ${GLITCHTIP_EMAIL_URL:-consolemail://}
-      GLITCHTIP_DOMAIN: https://glitchtip.${DOMAIN}
-      DEFAULT_FROM_EMAIL: ${GLITCHTIP_FROM_EMAIL:-glitchtip@localhost}
-      CELERY_WORKER_AUTOSCALE: "1,3"
-      CELERY_WORKER_MAX_TASKS_PER_CHILD: "10000"
-    networks:
-      - observability
-    depends_on:
-      glitchtip-postgres:
-        condition: service_healthy
-      glitchtip-redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8000/api/health/"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-
-  glitchtip-worker:
-    image: glitchtip/glitchtip:v4.1
-    container_name: glitchtip-worker
-    restart: unless-stopped
-    command: ./bin/run-celery-with-beat.sh
-    environment:
-      DATABASE_URL: postgres://glitchtip:${GLITCHTIP_DB_PASSWORD:-glitchtip}@glitchtip-postgres:5432/glitchtip
-      REDIS_URL: redis://glitchtip-redis:6379/0
-      SECRET_KEY: ${GLITCHTIP_SECRET_KEY}
-      EMAIL_URL: ${GLITCHTIP_EMAIL_URL:-consolemail://}
-      GLITCHTIP_DOMAIN: https://glitchtip.${DOMAIN}
-      DEFAULT_FROM_EMAIL: ${GLITCHTIP_FROM_EMAIL:-glitchtip@localhost}
-    networks:
-      - observability
-    depends_on:
-      glitchtip:
-        condition: service_healthy
-
   # ==================== AUTO-LOGGING SERVICE ====================
 
   redis-autolog:
@@ -264,7 +183,7 @@ services:
     environment:
       - REDIS_HOST=redis-autolog
       - REDIS_PORT=6379
-      - SENTRY_WEBHOOK_SECRET=${AUTOLOG_WEBHOOK_SECRET}
+      - ALERTMANAGER_WEBHOOK_SECRET=${AUTOLOG_WEBHOOK_SECRET}
       - LOG_LEVEL=${AUTOLOG_LOG_LEVEL:-INFO}
       - ERROR_THRESHOLD_COUNT=${ERROR_THRESHOLD_COUNT:-10}
       - ERROR_THRESHOLD_WINDOW_MINUTES=${ERROR_THRESHOLD_WINDOW_MINUTES:-5}
@@ -327,7 +246,6 @@ services:
       - observability
     depends_on:
       - grafana
-      - glitchtip
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:2019/metrics"]
       interval: 10s
@@ -340,7 +258,6 @@ services:
 #
 # 1. Public-facing UIs (via Caddy):
 #    - Grafana: expose 3000 (Caddy proxies to grafana.yourdomain.com)
-#    - Sentry: expose 9000 (Caddy proxies to sentry.yourdomain.com)
 #
 # 2. Telemetry receivers (from app droplets via VPC):
 #    - OTEL Collector gRPC: 0.0.0.0:4317 (apps send here)

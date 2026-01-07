@@ -25,7 +25,7 @@ import (
 type Config struct {
 	RedisHost                   string
 	RedisPort                   string
-	SentryWebhookSecret         string
+	AlertmanagerWebhookSecret   string
 	LogLevel                    string
 	ErrorThresholdCount         int
 	ErrorThresholdWindowMinutes int
@@ -438,118 +438,6 @@ func (h *Handler) ListAutoLogs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Sentry webhook handler
-func (h *Handler) SentryWebhook(w http.ResponseWriter, r *http.Request) {
-	timer := prometheus.NewTimer(webhookDuration.WithLabelValues("sentry"))
-	defer timer.ObserveDuration()
-
-	var data map[string]interface{}
-	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	action, _ := data["action"].(string)
-	webhookRequests.WithLabelValues("sentry", action).Inc()
-
-	// Process Sentry events
-	if action == "created" || action == "event.alert" {
-		h.handleSentryError(r.Context(), data)
-	}
-
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
-		"status": "processed",
-	})
-}
-
-func (h *Handler) handleSentryError(ctx context.Context, data map[string]interface{}) {
-	// Extract event details
-	eventData, ok := data["data"].(map[string]interface{})
-	if !ok {
-		return
-	}
-
-	event, ok := eventData["event"].(map[string]interface{})
-	if !ok {
-		return
-	}
-
-	// Extract tags
-	tags := make(map[string]string)
-	if tagsData, ok := event["tags"].([]interface{}); ok {
-		for _, tag := range tagsData {
-			if tagMap, ok := tag.(map[string]interface{}); ok {
-				if key, ok := tagMap["key"].(string); ok {
-					if value, ok := tagMap["value"].(string); ok {
-						tags[key] = value
-					}
-				}
-			}
-		}
-	}
-
-	app := tags["app"]
-	if app == "" {
-		app = "unknown"
-	}
-
-	environment := tags["environment"]
-	if environment == "" {
-		environment = "production"
-	}
-
-	var endpoint *string
-	if req, ok := event["request"].(map[string]interface{}); ok {
-		if url, ok := req["url"].(string); ok {
-			endpoint = &url
-		}
-	}
-
-	errorType := "Unknown"
-	if exception, ok := event["exception"].(map[string]interface{}); ok {
-		if values, ok := exception["values"].([]interface{}); ok && len(values) > 0 {
-			if firstValue, ok := values[0].(map[string]interface{}); ok {
-				if errType, ok := firstValue["type"].(string); ok {
-					errorType = errType
-				}
-			}
-		}
-	}
-
-	errorEvents.WithLabelValues(app, environment, errorType).Inc()
-
-	// Increment error counter
-	count, err := h.manager.IncrementError(ctx, app, environment, endpoint)
-	if err != nil {
-		log.Printf("Error incrementing counter: %v", err)
-		return
-	}
-
-	log.Printf("Sentry error: %s/%s - %s (count: %d/%d)",
-		app, environment, errorType, count, h.config.ErrorThresholdCount)
-
-	// Check if threshold exceeded
-	if count >= int64(h.config.ErrorThresholdCount) {
-		now := time.Now()
-		config := &AutoLogConfig{
-			App:           app,
-			Environment:   environment,
-			Service:       app,
-			Endpoint:      endpoint,
-			ErrorType:     &errorType,
-			TriggerSource: "sentry",
-			EnabledAt:     now,
-			ExpiresAt:     now.Add(time.Duration(h.config.AutoLogTTLMinutes) * time.Minute),
-			ErrorCount:    int(count),
-		}
-
-		if err := h.manager.EnableAutoLog(ctx, config); err != nil {
-			log.Printf("Error enabling auto-log: %v", err)
-		}
-	}
-}
-
 // AlertManager webhook handler
 func (h *Handler) AlertManagerWebhook(w http.ResponseWriter, r *http.Request) {
 	webhookType := mux.Vars(r)["type"]
@@ -633,7 +521,7 @@ func loadConfig() *Config {
 	return &Config{
 		RedisHost:                   getEnv("REDIS_HOST", "redis-autolog"),
 		RedisPort:                   getEnv("REDIS_PORT", "6379"),
-		SentryWebhookSecret:         getEnv("SENTRY_WEBHOOK_SECRET", ""),
+		AlertmanagerWebhookSecret:   getEnv("ALERTMANAGER_WEBHOOK_SECRET", ""),
 		LogLevel:                    getEnv("LOG_LEVEL", "INFO"),
 		ErrorThresholdCount:         errorThreshold,
 		ErrorThresholdWindowMinutes: errorWindow,
@@ -683,7 +571,6 @@ func main() {
 	r.Handle("/metrics", promhttp.Handler()).Methods("GET")
 
 	// Webhooks
-	r.HandleFunc("/webhook/sentry", handler.SentryWebhook).Methods("POST")
 	r.HandleFunc("/webhook/{type}", handler.AlertManagerWebhook).Methods("POST")
 
 	// API endpoints

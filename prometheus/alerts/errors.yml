@@ -1,0 +1,208 @@
+groups:
+  - name: error_alerts
+    interval: 30s
+    rules:
+      # High error rate alert - monitors rate of errors from logs
+      # Note: This requires Loki to expose metrics or use recording rules
+      - alert: HighErrorRate
+        expr: |
+          sum by (app, environment) (
+            rate({app=~".+", severity=~"Error|Critical|Fatal"}[5m])
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          category: application
+        annotations:
+          summary: "High error rate in {{ $labels.app }}"
+          description: "{{ $labels.app }} in {{ $labels.environment }} has {{ $value }} errors/sec over the last 5 minutes"
+          runbook_url: "https://wiki.yourcompany.com/runbooks/high-error-rate"
+
+      # Critical error detected - any critical severity error
+      - alert: CriticalErrorDetected
+        expr: |
+          count_over_time({app=~".+", severity="Critical"}[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+          category: application
+        annotations:
+          summary: "Critical error detected in {{ $labels.app }}"
+          description: "Critical severity error detected in {{ $labels.app }} ({{ $labels.environment }}). Immediate investigation required."
+          runbook_url: "https://wiki.yourcompany.com/runbooks/critical-error"
+
+      # Fatal error detected - most severe errors
+      - alert: FatalErrorDetected
+        expr: |
+          count_over_time({app=~".+", severity="Fatal"}[2m]) > 0
+        for: 30s
+        labels:
+          severity: critical
+          team: platform
+          category: application
+          autolog: "true"
+        annotations:
+          summary: "FATAL error in {{ $labels.app }} - Auto-logging enabled"
+          description: "Fatal error detected in {{ $labels.app }} ({{ $labels.environment }}). This is the highest severity level. Auto-logging has been triggered."
+          runbook_url: "https://wiki.yourcompany.com/runbooks/fatal-error"
+
+      # Error spike - comparing current error rate to 1 hour ago
+      - alert: ErrorSpike
+        expr: |
+          (
+            sum by (app, environment) (rate({app=~".+", severity=~"Error|Critical"}[5m]))
+            /
+            sum by (app, environment) (rate({app=~".+", severity=~"Error|Critical"}[5m] offset 1h))
+          ) > 2
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+          category: application
+        annotations:
+          summary: "Error spike detected in {{ $labels.app }}"
+          description: "Error rate in {{ $labels.app }} ({{ $labels.environment }}) increased by {{ $value }}x compared to 1 hour ago"
+          runbook_url: "https://wiki.yourcompany.com/runbooks/error-spike"
+
+      # Sustained high error count - many errors over time
+      - alert: SustainedHighErrorCount
+        expr: |
+          sum by (app, environment) (
+            count_over_time({app=~".+", severity=~"Error|Critical|Fatal"}[15m])
+          ) > 100
+        for: 15m
+        labels:
+          severity: warning
+          team: platform
+          category: application
+          autolog: "true"
+        annotations:
+          summary: "Sustained high error count in {{ $labels.app }}"
+          description: "{{ $labels.app }} ({{ $labels.environment }}) has logged {{ $value }} errors in the last 15 minutes. Auto-logging triggered."
+          runbook_url: "https://wiki.yourcompany.com/runbooks/sustained-errors"
+
+      # Errors across multiple environments - indicates platform-wide issue
+      - alert: ErrorsAcrossEnvironments
+        expr: |
+          count by (app) (
+            sum by (app, environment) (
+              rate({app=~".+", severity=~"Error|Critical|Fatal"}[5m])
+            ) > 0.05
+          ) >= 2
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+          category: application
+        annotations:
+          summary: "{{ $labels.app }} experiencing errors across multiple environments"
+          description: "{{ $labels.app }} is logging errors in 2 or more environments simultaneously, indicating a potential platform-wide issue"
+          runbook_url: "https://wiki.yourcompany.com/runbooks/multi-environment-errors"
+
+      # Error rate by endpoint/path - specific endpoint having issues
+      - alert: HighErrorRateByEndpoint
+        expr: |
+          sum by (app, environment, attributes_Path) (
+            rate({app=~".+", severity=~"Error|Critical|Fatal", attributes_Path!=""}[10m])
+          ) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          category: application
+        annotations:
+          summary: "High error rate on endpoint {{ $labels.attributes_Path }}"
+          description: "Endpoint {{ $labels.attributes_Path }} in {{ $labels.app }} ({{ $labels.environment }}) is experiencing {{ $value }} errors/sec"
+          runbook_url: "https://wiki.yourcompany.com/runbooks/endpoint-errors"
+
+      # New error pattern detected - errors started recently
+      - alert: NewErrorPattern
+        expr: |
+          (
+            sum by (app, environment) (
+              count_over_time({app=~".+", severity=~"Error|Critical|Fatal"}[10m])
+            )
+            unless
+            sum by (app, environment) (
+              count_over_time({app=~".+", severity=~"Error|Critical|Fatal"}[10m] offset 1h)
+            )
+          ) > 5
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          category: application
+        annotations:
+          summary: "New error pattern in {{ $labels.app }}"
+          description: "{{ $labels.app }} ({{ $labels.environment }}) is experiencing errors that were not present 1 hour ago. This may indicate a recent deployment or configuration change."
+          runbook_url: "https://wiki.yourcompany.com/runbooks/new-errors"
+
+      # Application healthy - no errors for extended period (info alert)
+      # This can be disabled if not needed
+      - alert: ApplicationHealthy
+        expr: |
+          sum by (app, environment) (
+            rate({app=~".+"}[5m])
+          ) > 0
+          unless
+          sum by (app, environment) (
+            rate({app=~".+", severity=~"Error|Critical|Fatal"}[5m])
+          ) > 0
+        for: 2h
+        labels:
+          severity: info
+          team: platform
+          category: health
+        annotations:
+          summary: "{{ $labels.app }} running without errors"
+          description: "{{ $labels.app }} ({{ $labels.environment }}) has been running for 2 hours without logging any errors"
+
+      # Database-related errors
+      - alert: DatabaseErrors
+        expr: |
+          sum by (app, environment) (
+            rate({app=~".+", severity=~"Error|Critical|Fatal"} |~ "(?i)(database|sql|connection|timeout|deadlock)" [5m])
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+          category: database
+        annotations:
+          summary: "Database errors detected in {{ $labels.app }}"
+          description: "{{ $labels.app }} ({{ $labels.environment }}) is experiencing database-related errors at {{ $value }} errors/sec"
+          runbook_url: "https://wiki.yourcompany.com/runbooks/database-errors"
+
+      # Authentication/Authorization errors
+      - alert: AuthenticationErrors
+        expr: |
+          sum by (app, environment) (
+            rate({app=~".+", severity=~"Error|Critical|Fatal"} |~ "(?i)(auth|unauthorized|forbidden|401|403)" [5m])
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          category: security
+        annotations:
+          summary: "Authentication/authorization errors in {{ $labels.app }}"
+          description: "{{ $labels.app }} ({{ $labels.environment }}) is experiencing auth-related errors at {{ $value }} errors/sec. This could indicate a security issue or misconfiguration."
+          runbook_url: "https://wiki.yourcompany.com/runbooks/auth-errors"
+
+      # External service errors (third-party API failures)
+      - alert: ExternalServiceErrors
+        expr: |
+          sum by (app, environment) (
+            rate({app=~".+", severity=~"Error|Critical|Fatal"} |~ "(?i)(external|api|third.party|integration|webhook)" [5m])
+          ) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+          category: integration
+        annotations:
+          summary: "External service errors in {{ $labels.app }}"
+          description: "{{ $labels.app }} ({{ $labels.environment }}) is experiencing errors with external services/APIs at {{ $value }} errors/sec"
+          runbook_url: "https://wiki.yourcompany.com/runbooks/external-service-errors"

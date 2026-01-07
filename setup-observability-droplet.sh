@@ -91,7 +91,6 @@ echo "  VPC CIDR: $VPC_CIDR"
 echo "  Domain: $DOMAIN"
 echo "  Email: $EMAIL"
 echo "  Grafana URL: https://grafana.$DOMAIN"
-echo "  GlitchTip URL: https://glitchtip.$DOMAIN"
 echo ""
 read -p "Is this correct? (y/n) " -n 1 -r
 echo
@@ -112,15 +111,12 @@ if [ ! -f .env ]; then
 
     # Generate secure keys
     if command -v openssl &> /dev/null; then
-        GLITCHTIP_KEY=$(openssl rand -hex 32)
         AUTOLOG_KEY=$(openssl rand -hex 16)
         GRAFANA_PASSWORD=$(openssl rand -base64 16)
-        GLITCHTIP_DB_PASSWORD=$(openssl rand -base64 16)
 
         # Update .env
-        sed -i.bak "s/changeme-please-generate-a-new-key-using-openssl-rand-hex-32/$GLITCHTIP_KEY/" .env
-        sed -i "s/changeme-generate-random-string/$AUTOLOG_KEY/" .env
-        sed -i "s/changeme-strong-password/$GLITCHTIP_DB_PASSWORD/g" .env
+        sed -i.bak "s/changeme-generate-random-string/$AUTOLOG_KEY/" .env
+        sed -i "s/changeme-strong-password/$GRAFANA_PASSWORD/" .env
         sed -i "s/DOMAIN=yourdomain.com/DOMAIN=$DOMAIN/" .env
         echo "PRIVATE_IP=$PRIVATE_IP" >> .env
         echo "VPC_CIDR=$VPC_CIDR" >> .env
@@ -132,6 +128,7 @@ if [ ! -f .env ]; then
         echo "🔐 IMPORTANT: Save these credentials!"
         echo "─────────────────────────────────────"
         echo "Grafana admin password: $GRAFANA_PASSWORD"
+        echo "Auto-Log webhook secret: $AUTOLOG_KEY"
         echo "─────────────────────────────────────"
         echo ""
     else
@@ -220,21 +217,9 @@ echo ""
 echo "⏳ Waiting for services to be healthy..."
 sleep 15
 
-# Wait for GlitchTip
-echo "Waiting for GlitchTip (this may take 1-2 minutes)..."
-for i in {1..40}; do
-    if docker compose -f docker-compose.yml exec -T glitchtip wget --spider -q http://localhost:8000/api/health/ 2>/dev/null; then
-        echo "✅ GlitchTip is ready!"
-        break
-    fi
-    echo -n "."
-    sleep 3
-done
-
-echo ""
 echo ""
 echo "🌐 Caddy will automatically obtain SSL certificates..."
-echo "   (This happens on first request to your domains)"
+echo "   (This happens on first request to your domain)"
 echo ""
 
 echo "╔══════════════════════════════════════════════════════════════╗"
@@ -242,36 +227,40 @@ echo "║              Observability Stack Ready! 🎉                   ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 echo "🌐 Access URLs (HTTPS will be configured automatically):"
-echo "   • Grafana:   https://grafana.$DOMAIN (admin / [see above])"
-echo "   • GlitchTip: https://glitchtip.$DOMAIN"
+echo "   • Grafana: https://grafana.$DOMAIN (admin / [see above])"
 echo ""
-echo "📡 Telemetry Endpoints (from app droplets):"
+echo "📡 Telemetry Endpoints (from app droplets via VPC):"
 echo "   • OTLP gRPC:     http://$PRIVATE_IP:4317"
 echo "   • OTLP HTTP:     http://$PRIVATE_IP:4318"
 echo "   • Loki:          http://$PRIVATE_IP:3100"
 echo "   • Auto-Log API:  http://$PRIVATE_IP:5000"
 echo ""
+echo "📊 Services Running:"
+echo "   • Grafana       - Dashboards, alerting, visualization"
+echo "   • Prometheus    - Metrics storage"
+echo "   • Loki          - Log aggregation"
+echo "   • Tempo         - Distributed tracing"
+echo "   • Alertmanager  - Alert routing and notifications"
+echo "   • OTEL Collector - Telemetry ingestion"
+echo "   • Auto-Log      - Intelligent verbose logging"
+echo "   • Caddy         - Reverse proxy with auto-HTTPS"
+echo ""
 echo "📋 Next Steps:"
 echo ""
-echo "1. IMPORTANT: Set DNS records (if not done already):"
+echo "1. IMPORTANT: Set DNS record (if not done already):"
 echo "   grafana.$DOMAIN → $(curl -s ifconfig.me)"
-echo "   glitchtip.$DOMAIN → $(curl -s ifconfig.me)"
 echo ""
-echo "2. Initialize GlitchTip database:"
-echo "   docker compose -f docker-compose.yml exec glitchtip ./manage.py migrate"
-echo ""
-echo "3. Create GlitchTip superuser:"
-echo "   docker compose -f docker-compose.yml exec glitchtip ./manage.py createsuperuser"
-echo ""
-echo "4. Visit https://grafana.$DOMAIN to verify Caddy + Let's Encrypt"
+echo "2. Visit https://grafana.$DOMAIN to verify Caddy + Let's Encrypt"
 echo "   (First visit will obtain SSL certificate)"
 echo ""
-echo "5. Configure your application droplets to send telemetry to:"
-echo "   OBSERVABILITY_ENDPOINT=http://$PRIVATE_IP:4317"
+echo "3. Configure your application droplets to send telemetry to:"
+echo "   OTEL_EXPORTER_OTLP_ENDPOINT=http://$PRIVATE_IP:4317"
 echo ""
-echo "6. View logs: docker compose -f docker-compose.yml logs -f"
+echo "4. Configure error monitoring alerts in Grafana to trigger auto-logging"
 echo ""
-echo "7. Check health: docker compose -f docker-compose.yml ps"
+echo "5. View logs: docker compose logs -f"
+echo ""
+echo "6. Check health: docker compose ps"
 echo ""
 echo "💡 Caddy Features:"
 echo "   • Automatic HTTPS with Let's Encrypt"
@@ -279,5 +268,5 @@ echo "   • Auto-renewal of certificates"
 echo "   • HTTP/3 support"
 echo "   • Security headers configured"
 echo ""
-echo "📚 Documentation: See MULTI_DROPLET_SETUP.md for complete guide"
+echo "📚 Documentation: See README.md for dashboards and configuration"
 echo ""
