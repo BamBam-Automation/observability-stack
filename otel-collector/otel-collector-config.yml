@@ -72,6 +72,10 @@ exporters:
     target_info:
       enabled: true
     add_metric_suffixes: false
+    # Convert OTEL resource attributes to metric labels
+    # This adds service_name label (service.name becomes service_name)
+    resource_to_telemetry_conversion:
+      enabled: true
 
   # Debug exporter for debugging (replaces deprecated logging exporter)
   debug:
